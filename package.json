@@ -1,0 +1,18 @@
+﻿{
+  "name": "display-pen",
+  "version": "0.1.0",
+  "description": "Draw on top of your whole screen from a floating toolbar (Windows).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "build": "bun run scripts/build.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  }
+}
