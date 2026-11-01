@@ -38,6 +38,34 @@ Global shortcuts:
 Toolbar position, colour and size are saved to `display-pen.json` next to the exe. Starting the exe again
 while it is running just brings the toolbar back.
 
+## Stream Deck
+
+`streamdeck/` is a Stream Deck plugin with keys for **Draw On/Off**, **Tool** (pen, highlighter, eraser or
+mouse), **Colour** and **Size** (a fixed one, or *next* to cycle), **Undo**, **Clear All**, **Show/Hide Toolbar**
+and **Show/Hide Drawings**. Keys show the live state: the active tool and size are highlighted, the selected
+colour has a ring, and they update when you change things from the toolbar or hotkeys too. Pressing a key
+while Display Pen isn't running starts `dist/display-pen.exe`.
+
+```bash
+cd streamdeck && npm install && npm run build && npx streamdeck link com.tim.display-pen.sdPlugin
+```
+
+Restart the Stream Deck app once after linking. After plugin changes: `npm run build && npm run restart`.
+
+The plugin talks to a small HTTP API that Display Pen serves on `127.0.0.1:8766` (requests from web pages,
+which carry an `Origin` header, are refused):
+
+| Request | |
+| --- | --- |
+| `GET /status` | `{ tool, inkTool, color, size, toolbar, drawings, canUndo }` |
+| `POST /tool/{cursor,pen,highlighter,eraser}` | Pick a tool (`cursor` = normal mode) |
+| `POST /draw` | Toggle drawing / normal mode |
+| `POST /color/{0-7}`, `POST /size/{0-2}` | Ink colour and size |
+| `POST /undo`, `POST /clear` | |
+| `POST /toolbar/{show,hide,toggle}`, `POST /drawings/{show,hide,toggle}` | |
+
+Every POST answers with the new status.
+
 ## Develop
 
 ```bash
@@ -70,5 +98,8 @@ the tray icon). Copy the exe anywhere and run it; nothing needs to be installed.
 - `src/toolbar.ts`: the toolbar, a second layered window owned by the overlay (so it always stays above
   it), with `WS_EX_NOACTIVATE` so clicking it never steals focus from the app you are presenting.
 - `src/tray.ts`: notification-area icon and menu. `src/main.ts`: app state, hotkeys, message loop.
+- `src/remote-worker.ts`: the Stream Deck API. The main thread is busy in `GetMessageW`, so the HTTP server
+  runs in a worker thread and forwards each request with `SendMessageTimeoutW`; the main window answers with
+  the new state packed into the `LRESULT` (`src/remote.ts`).
 - `src/shortcut.ts`: the Start menu shortcut, written through the `IShellLinkW` COM interface.
 - `src/win32.ts`, `src/window.ts`, `src/gfx.ts`: FFI bindings, window procedure dispatch, drawing helpers.

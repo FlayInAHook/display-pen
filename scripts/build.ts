@@ -68,6 +68,7 @@ const build = Bun.spawnSync(
     process.execPath,
     "build",
     join(root, "src", "main.ts"),
+    join(root, "src", "remote-worker.ts"),
     "--compile",
     "--minify",
     "--windows-hide-console",

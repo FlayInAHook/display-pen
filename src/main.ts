@@ -1,7 +1,10 @@
 // Display Pen: draw on top of the whole screen from a floating, always-on-top toolbar.
+import { Worker } from "node:worker_threads";
 import { createIcon, shutdownGdiplus, startGdiplus } from "./gfx";
 import { createBrushCursor, paintAppIcon } from "./icons";
 import { Overlay, OVERLAY_CLASS, type InkStyle, type InkTool } from "./overlay";
+import { COLORS, SIZE_NAMES } from "./palette";
+import { packStatus, RemoteCommand, TOOLS, Visibility, WM_REMOTE } from "./remote";
 import { loadSettings, logError, runningFromSource, saveSettings } from "./settings";
 import {
   addStartMenuShortcut,
@@ -47,18 +50,6 @@ const WM_SHOW_TOOLBAR = WM_APP + 2;
 const TOPMOST_TIMER = 1;
 const TOPMOST_INTERVAL_MS = 1500;
 
-const COLORS = [
-  { argb: 0xffe53935, name: "Red" },
-  { argb: 0xfffb8c00, name: "Orange" },
-  { argb: 0xfffdd835, name: "Yellow" },
-  { argb: 0xff43a047, name: "Green" },
-  { argb: 0xff1e88e5, name: "Blue" },
-  { argb: 0xff8e24aa, name: "Purple" },
-  { argb: 0xff212121, name: "Black" },
-  { argb: 0xffffffff, name: "White" },
-] as const;
-
-const SIZE_NAMES = ["Thin", "Medium", "Thick"] as const;
 const WIDTHS: Record<InkTool, readonly number[]> = {
   pen: [3, 6, 12],
   highlighter: [14, 24, 40],
@@ -135,6 +126,10 @@ class App {
 
     this.setTool("cursor");
     this.toolbar.show();
+  }
+
+  get hwnd() {
+    return this.main;
   }
 
   private inkStyle(tool: InkTool): InkStyle {
@@ -280,6 +275,49 @@ class App {
     }
   }
 
+  /** A command from the Stream Deck control API; returns the resulting state, packed. */
+  private remote(command: number, arg: number) {
+    const visible = (current: boolean) => (arg === Visibility.toggle ? !current : arg === Visibility.show);
+    switch (command) {
+      case RemoteCommand.tool:
+        if (TOOLS[arg]) this.setTool(TOOLS[arg]);
+        break;
+      case RemoteCommand.toggleDraw:
+        this.toggleDraw();
+        break;
+      case RemoteCommand.color:
+        if (COLORS[arg]) this.command({ type: "color", index: arg });
+        break;
+      case RemoteCommand.size:
+        if (SIZE_NAMES[arg]) this.command({ type: "size", index: arg });
+        break;
+      case RemoteCommand.undo:
+        this.overlay.undo();
+        break;
+      case RemoteCommand.clear:
+        this.overlay.clear();
+        break;
+      case RemoteCommand.toolbar:
+        if (visible(this.toolbar.visible) !== this.toolbar.visible) {
+          if (this.toolbar.visible) this.hideToolbar();
+          else this.showToolbar();
+        }
+        break;
+      case RemoteCommand.drawings:
+        this.overlay.setDrawingsVisible(visible(this.overlay.drawingsVisible));
+        break;
+    }
+    return packStatus({
+      tool: this.tool,
+      inkTool: this.lastInkTool,
+      color: this.color,
+      size: this.size,
+      toolbar: this.toolbar.visible,
+      drawings: this.overlay.drawingsVisible,
+      canUndo: this.overlay.strokeCount > 0,
+    });
+  }
+
   private save() {
     saveSettings({ toolbar: this.toolbar.position(), color: this.color, size: this.size });
   }
@@ -312,6 +350,8 @@ class App {
       case WM_SHOW_TOOLBAR:
         this.showToolbar();
         return 0;
+      case WM_REMOTE:
+        return this.remote(Number(wParam), Number(lParam));
       case WM_HOTKEY:
         switch (Number(wParam)) {
           case Hotkey.toggleDraw:
@@ -382,7 +422,9 @@ function main() {
   registerClass(OVERLAY_CLASS);
   registerClass(TOOLBAR_CLASS, user32.LoadCursorW(null, IDC_ARROW));
   registerClass(TIP_CLASS);
-  new App();
+  const app = new App();
+  // The Stream Deck control API (in the compiled exe the worker is a second entry point, see scripts/build.ts).
+  new Worker(new URL("./remote-worker.ts", import.meta.url), { workerData: { hwnd: app.hwnd } });
   runMessageLoop();
   shutdownGdiplus();
 }

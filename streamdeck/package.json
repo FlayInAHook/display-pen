@@ -1,0 +1,17 @@
+{
+  "name": "display-pen-streamdeck",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node src/write-images.js && esbuild src/plugin.js --bundle --platform=node --format=esm --target=node20 --outfile=com.tim.display-pen.sdPlugin/bin/plugin.js \"--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "link": "streamdeck link com.tim.display-pen.sdPlugin",
+    "restart": "streamdeck restart com.tim.display-pen"
+  },
+  "dependencies": {
+    "@elgato/streamdeck": "^3.0.4"
+  },
+  "devDependencies": {
+    "@elgato/cli": "^1.4.0",
+    "esbuild": "^0.25.0"
+  }
+}

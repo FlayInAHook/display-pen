@@ -16,6 +16,7 @@ export const user32 = dlopen("user32.dll", {
   TranslateMessage: { args: [P], returns: i32 },
   DispatchMessageW: { args: [P], returns: i64 },
   PostMessageW: { args: [P, u32, u64, i64], returns: i32 },
+  SendMessageTimeoutW: { args: [P, u32, u64, i64, u32, u32, P], returns: i64 },
   PostQuitMessage: { args: [i32], returns: V },
   FindWindowW: { args: [P, P], returns: P },
   ShowWindow: { args: [P, i32], returns: i32 },

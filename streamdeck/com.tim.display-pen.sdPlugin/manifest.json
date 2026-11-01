@@ -1,0 +1,85 @@
+{
+	"$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+	"Name": "Display Pen",
+	"Version": "0.1.0.0",
+	"Author": "Tim",
+	"Description": "Control Display Pen (draw on your screen) from Stream Deck: drawing mode, tools, colours, sizes, undo and clear.",
+	"Category": "Display Pen",
+	"CategoryIcon": "imgs/category",
+	"Icon": "imgs/plugin",
+	"CodePath": "bin/plugin.js",
+	"SDKVersion": 3,
+	"Software": { "MinimumVersion": "7.1" },
+	"OS": [{ "Platform": "windows", "MinimumVersion": "10" }],
+	"Nodejs": { "Version": "24", "Debug": "enabled" },
+	"UUID": "com.tim.display-pen",
+	"Actions": [
+		{
+			"Name": "Draw On/Off",
+			"UUID": "com.tim.display-pen.draw",
+			"Icon": "imgs/draw",
+			"Tooltip": "Switch between drawing and normal mouse use.",
+			"Controllers": ["Keypad"],
+			"States": [{ "Image": "imgs/key-draw", "TitleAlignment": "bottom" }]
+		},
+		{
+			"Name": "Tool",
+			"UUID": "com.tim.display-pen.tool",
+			"Icon": "imgs/tool",
+			"Tooltip": "Pick the pen, highlighter, eraser or mouse. Press the active tool again to go back to the mouse.",
+			"Controllers": ["Keypad"],
+			"PropertyInspectorPath": "pi/settings.html",
+			"States": [{ "Image": "imgs/key-tool", "TitleAlignment": "bottom" }]
+		},
+		{
+			"Name": "Colour",
+			"UUID": "com.tim.display-pen.color",
+			"Icon": "imgs/color",
+			"Tooltip": "Pick an ink colour (and start drawing), or cycle through them.",
+			"Controllers": ["Keypad"],
+			"PropertyInspectorPath": "pi/settings.html",
+			"States": [{ "Image": "imgs/key-color", "TitleAlignment": "bottom" }]
+		},
+		{
+			"Name": "Size",
+			"UUID": "com.tim.display-pen.size",
+			"Icon": "imgs/size",
+			"Tooltip": "Pick thin, medium or thick, or cycle through them.",
+			"Controllers": ["Keypad"],
+			"PropertyInspectorPath": "pi/settings.html",
+			"States": [{ "Image": "imgs/key-size", "TitleAlignment": "bottom" }]
+		},
+		{
+			"Name": "Undo",
+			"UUID": "com.tim.display-pen.undo",
+			"Icon": "imgs/undo",
+			"Tooltip": "Undo the last stroke.",
+			"Controllers": ["Keypad"],
+			"States": [{ "Image": "imgs/key-undo", "TitleAlignment": "bottom" }]
+		},
+		{
+			"Name": "Clear All",
+			"UUID": "com.tim.display-pen.clear",
+			"Icon": "imgs/clear",
+			"Tooltip": "Clear all drawings.",
+			"Controllers": ["Keypad"],
+			"States": [{ "Image": "imgs/key-clear", "TitleAlignment": "bottom" }]
+		},
+		{
+			"Name": "Show/Hide Toolbar",
+			"UUID": "com.tim.display-pen.toolbar",
+			"Icon": "imgs/toolbar",
+			"Tooltip": "Show or hide the floating toolbar.",
+			"Controllers": ["Keypad"],
+			"States": [{ "Image": "imgs/key-toolbar", "TitleAlignment": "bottom" }]
+		},
+		{
+			"Name": "Show/Hide Drawings",
+			"UUID": "com.tim.display-pen.drawings",
+			"Icon": "imgs/drawings",
+			"Tooltip": "Hide the drawings without clearing them, or show them again.",
+			"Controllers": ["Keypad"],
+			"States": [{ "Image": "imgs/key-drawings", "TitleAlignment": "bottom" }]
+		}
+	]
+}
