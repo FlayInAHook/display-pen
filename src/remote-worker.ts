@@ -4,7 +4,11 @@
 //   GET  /status
 //   POST /tool/{cursor|pen|highlighter|eraser}   /draw (toggle)   /color/{0-7}   /size/{0-2}
 //   POST /undo   /clear   /toolbar/{show|hide|toggle}   /drawings/{show|hide|toggle}
-import { workerData } from "node:worker_threads";
+//   GET  /ink (OBS browser source page)   /ink/ws (live ink stream, see src/ink.ts)
+import { parentPort, workerData } from "node:worker_threads";
+import type { Server } from "bun";
+import { applyInk, emptyInkState, type InkEvent } from "./ink";
+import { INK_PAGE } from "./ink-page";
 import { COLORS, SIZE_NAMES } from "./palette";
 import { REMOTE_PORT, RemoteCommand, TOOLS, unpackStatus, Visibility, WM_REMOTE } from "./remote";
 import { logError } from "./settings";
@@ -60,10 +64,31 @@ function route(parts: string[]): [number, number] | null {
   return null;
 }
 
-function handle(req: Request): Response {
-  // Browsers always send Origin on cross-site requests; refusing them keeps web pages from drawing on you.
-  if (req.headers.has("origin")) return new Response("Forbidden", { status: 403 });
+const INK_TOPIC = "ink";
+const ink = emptyInkState();
+let server: Server<undefined> | null = null;
+
+parentPort?.on("message", (e: InkEvent) => {
+  applyInk(ink, e);
+  server?.publish(INK_TOPIC, JSON.stringify(e));
+});
+
+/** The ink page's own WebSocket carries its origin; any other site's page is refused. */
+function ownOrigin(origin: string | null) {
+  return origin === `http://127.0.0.1:${REMOTE_PORT}` || origin === `http://localhost:${REMOTE_PORT}`;
+}
+
+function handle(req: Request, srv: Server<undefined>): Response | undefined {
   const parts = new URL(req.url).pathname.split("/").filter(Boolean);
+  const origin = req.headers.get("origin");
+  if (req.method === "GET" && parts[0] === "ink" && (!origin || ownOrigin(origin))) {
+    if (parts.length === 1) return new Response(INK_PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
+    if (parts.length === 2 && parts[1] === "ws") {
+      return srv.upgrade(req) ? undefined : new Response("WebSocket expected", { status: 400 });
+    }
+  }
+  // Browsers always send Origin on cross-site requests; refusing them keeps web pages from drawing on you.
+  if (origin) return new Response("Forbidden", { status: 403 });
   let command: [number, number] | null;
   if (req.method === "GET" && parts.length === 1 && parts[0] === "status") command = [RemoteCommand.status, 0];
   else if (req.method === "POST") command = route(parts);
@@ -75,7 +100,18 @@ function handle(req: Request): Response {
 }
 
 try {
-  Bun.serve({ hostname: "127.0.0.1", port: REMOTE_PORT, fetch: handle });
+  server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: REMOTE_PORT,
+    fetch: handle,
+    websocket: {
+      open(ws) {
+        ws.subscribe(INK_TOPIC);
+        ws.send(JSON.stringify(ink));
+      },
+      message() {},
+    },
+  });
 } catch (e) {
   logError(`Stream Deck control API could not listen on port ${REMOTE_PORT}: ${e instanceof Error ? e.message : e}`);
 }

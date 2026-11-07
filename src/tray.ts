@@ -3,6 +3,7 @@ import {
   addr,
   MF_CHECKED,
   MF_GRAYED,
+  MF_POPUP,
   MF_SEPARATOR,
   MF_STRING,
   shell32,
@@ -71,19 +72,30 @@ export class TrayIcon {
   }
 }
 
-export type MenuItem = { id: number; label: string; checked?: boolean; disabled?: boolean } | "separator";
+export type MenuItem =
+  | { id: number; label: string; checked?: boolean; disabled?: boolean }
+  | { label: string; items: MenuItem[] }
+  | "separator";
 
-/** Shows a popup menu at the mouse and returns the chosen id, or 0 if dismissed. */
-export function showMenu(hwnd: Handle, items: MenuItem[]): number {
+function buildMenu(items: MenuItem[]): Handle {
   const menu = user32.CreatePopupMenu();
   for (const item of items) {
     if (item === "separator") {
       user32.AppendMenuW(menu, MF_SEPARATOR, 0, null);
+    } else if ("items" in item) {
+      // Destroyed together with its parent menu.
+      user32.AppendMenuW(menu, MF_POPUP, addr(buildMenu(item.items)), wstr(item.label));
     } else {
       const flags = MF_STRING | (item.checked ? MF_CHECKED : 0) | (item.disabled ? MF_GRAYED : 0);
       user32.AppendMenuW(menu, flags, item.id, wstr(item.label));
     }
   }
+  return menu;
+}
+
+/** Shows a popup menu at the mouse and returns the chosen id, or 0 if dismissed. */
+export function showMenu(hwnd: Handle, items: MenuItem[]): number {
+  const menu = buildMenu(items);
   const p = cursorPos();
   // Without this the menu would not close when clicking elsewhere.
   user32.SetForegroundWindow(hwnd);

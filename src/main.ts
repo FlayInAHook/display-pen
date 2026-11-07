@@ -4,7 +4,7 @@ import { createIcon, shutdownGdiplus, startGdiplus } from "./gfx";
 import { createBrushCursor, paintAppIcon } from "./icons";
 import { Overlay, OVERLAY_CLASS, type InkStyle, type InkTool } from "./overlay";
 import { COLORS, SIZE_NAMES } from "./palette";
-import { packStatus, RemoteCommand, TOOLS, Visibility, WM_REMOTE } from "./remote";
+import { packStatus, REMOTE_PORT, RemoteCommand, TOOLS, Visibility, WM_REMOTE } from "./remote";
 import { loadSettings, logError, runningFromSource, saveSettings } from "./settings";
 import {
   addStartMenuShortcut,
@@ -18,7 +18,10 @@ import { createWindow, destroyWindow, registerClass, runMessageLoop } from "./wi
 import {
   DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
   IDC_ARROW,
+  copyText,
   messageBox,
+  monitors,
+  openUrl,
   MOD_ALT,
   MOD_CONTROL,
   MOD_NOREPEAT,
@@ -38,6 +41,7 @@ import {
   WM_SETTINGCHANGE,
   WM_TIMER,
   WS_EX_TOOLWINDOW,
+  virtualScreen,
   WS_POPUP,
   wstr,
   type Handle,
@@ -65,7 +69,22 @@ const HOTKEY_KEYS: [number, string][] = [
   [Hotkey.toggleToolbar, "H"],
 ];
 
-const Menu = { toggleToolbar: 1, draw: 2, normal: 3, showDrawings: 4, undo: 5, clear: 6, startMenu: 7, exit: 8 } as const;
+const Menu = {
+  toggleToolbar: 1,
+  draw: 2,
+  normal: 3,
+  showDrawings: 4,
+  undo: 5,
+  clear: 6,
+  startMenu: 7,
+  exit: 8,
+  obsOpen: 9,
+  /** + monitor index; obsCopyAll copies the link for every monitor. */
+  obsCopy: 100,
+  obsCopyAll: 199,
+} as const;
+
+const INK_URL = `http://127.0.0.1:${REMOTE_PORT}/ink`;
 
 function errorText(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -130,6 +149,17 @@ class App {
 
   get hwnd() {
     return this.main;
+  }
+
+  /** Mirrors the ink to the HTTP worker, which streams it to the OBS browser source. */
+  mirrorInk(worker: Worker) {
+    this.overlay.onInk = (e) => worker.postMessage(e);
+    this.sendLayout();
+    this.overlay.publishInk();
+  }
+
+  private sendLayout() {
+    this.overlay.onInk({ t: "layout", layout: { screen: virtualScreen(), monitors: monitors() } });
   }
 
   private inkStyle(tool: InkTool): InkStyle {
@@ -232,6 +262,39 @@ class App {
     }
   }
 
+  /** The OBS browser-source link for one monitor (1 = primary) or "all", copied to the clipboard. */
+  private copyObsLink(monitor: number | "all") {
+    const screens = monitors();
+    const r = monitor === "all" ? virtualScreen() : screens[monitor - 1];
+    if (!r) return;
+    const url = monitor === 1 ? INK_URL : `${INK_URL}?monitor=${monitor}`;
+    if (!copyText(this.main, url)) {
+      messageBox(`Could not copy to the clipboard. The OBS link is:
+
+${url}`);
+      return;
+    }
+    this.tray.notify(
+      "OBS link copied",
+      `Add a Browser source in OBS, paste the link as its URL and set the size to ${r.right - r.left} × ${r.bottom - r.top}.`,
+    );
+  }
+
+  private obsMenu(): MenuItem {
+    const screens = monitors();
+    const size = (r: { left: number; top: number; right: number; bottom: number }) =>
+      `${r.right - r.left} × ${r.bottom - r.top}`;
+    const items: MenuItem[] = [{ id: Menu.obsOpen, label: "Open setup page in browser" }, "separator"];
+    screens.forEach((m, i) =>
+      items.push({
+        id: Menu.obsCopy + i + 1,
+        label: `Copy link for monitor ${i + 1}${m.primary ? " (primary)" : ""}	${size(m)}`,
+      }),
+    );
+    if (screens.length > 1) items.push({ id: Menu.obsCopyAll, label: `Copy link for all monitors	${size(virtualScreen())}` });
+    return { label: "Show in OBS", items };
+  }
+
   private showTrayMenu() {
     const hasInk = this.overlay.strokeCount > 0;
     const items: MenuItem[] = [
@@ -244,6 +307,7 @@ class App {
       { id: Menu.undo, label: "Undo\tCtrl+Alt+Shift+Z", disabled: !hasInk },
       { id: Menu.clear, label: "Clear all\tCtrl+Alt+Shift+C", disabled: !hasInk },
       "separator",
+      this.obsMenu(),
       {
         id: Menu.startMenu,
         label: runningFromSource ? "Add to Start menu (built exe only)" : "Add to Start menu",
@@ -272,7 +336,12 @@ class App {
         return this.toggleStartMenu();
       case Menu.exit:
         return this.exit();
+      case Menu.obsOpen:
+        return openUrl(INK_URL);
+      case Menu.obsCopyAll:
+        return this.copyObsLink("all");
     }
+    if (choice > Menu.obsCopy && choice < Menu.obsCopyAll) this.copyObsLink(choice - Menu.obsCopy);
   }
 
   /** A command from the Stream Deck control API; returns the resulting state, packed. */
@@ -381,6 +450,7 @@ class App {
         return 0;
       case WM_DISPLAYCHANGE:
         this.overlay.fitToScreen();
+        this.sendLayout();
         this.toolbar.clampToScreen();
         return 0;
       case WM_SETTINGCHANGE:
@@ -424,7 +494,8 @@ function main() {
   registerClass(TIP_CLASS);
   const app = new App();
   // The Stream Deck control API (in the compiled exe the worker is a second entry point, see scripts/build.ts).
-  new Worker(new URL("./remote-worker.ts", import.meta.url), { workerData: { hwnd: app.hwnd } });
+  const worker = new Worker(new URL("./remote-worker.ts", import.meta.url), { workerData: { hwnd: app.hwnd } });
+  app.mirrorInk(worker);
   runMessageLoop();
   shutdownGdiplus();
 }

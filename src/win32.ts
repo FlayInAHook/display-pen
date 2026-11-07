@@ -1,5 +1,5 @@
 // Thin bun:ffi bindings for the parts of Win32, GDI and GDI+ that Display Pen uses.
-import { dlopen, FFIType, ptr, read, type Pointer } from "bun:ffi";
+import { dlopen, FFIType, JSCallback, ptr, read, toArrayBuffer, type Pointer } from "bun:ffi";
 
 const { ptr: P, i32, u32, u16, i64, u64, f32 } = FFIType;
 const V = FFIType.void;
@@ -51,7 +51,12 @@ export const user32 = dlopen("user32.dll", {
   RegisterWindowMessageW: { args: [P], returns: u32 },
   MonitorFromRect: { args: [P, u32], returns: P },
   GetMonitorInfoW: { args: [P, P], returns: i32 },
+  EnumDisplayMonitors: { args: [P, P, P, i64], returns: i32 },
   MessageBoxW: { args: [P, P, P, u32], returns: i32 },
+  OpenClipboard: { args: [P], returns: i32 },
+  EmptyClipboard: { args: [], returns: i32 },
+  SetClipboardData: { args: [u32, P], returns: P },
+  CloseClipboard: { args: [], returns: i32 },
 }).symbols;
 
 export const gdi32 = dlopen("gdi32.dll", {
@@ -66,11 +71,16 @@ export const gdi32 = dlopen("gdi32.dll", {
 
 export const kernel32 = dlopen("kernel32.dll", {
   GetModuleHandleW: { args: [P], returns: P },
+  GlobalAlloc: { args: [u32, u64], returns: P },
+  GlobalLock: { args: [P], returns: P },
+  GlobalUnlock: { args: [P], returns: i32 },
+  GlobalFree: { args: [P], returns: P },
 }).symbols;
 
 export const shell32 = dlopen("shell32.dll", {
   Shell_NotifyIconW: { args: [u32, P], returns: i32 },
   SHGetKnownFolderPath: { args: [P, u32, P, P], returns: i32 },
+  ShellExecuteW: { args: [P, P, P, P, P, i32], returns: P },
 }).symbols;
 
 export const ole32 = dlopen("ole32.dll", {
@@ -161,7 +171,10 @@ export const WS_EX_NOACTIVATE = 0x08000000;
 export const GWL_EXSTYLE = -20;
 
 export const SW_HIDE = 0;
+export const SW_SHOWNORMAL = 1;
 export const SW_SHOWNOACTIVATE = 4;
+export const GMEM_MOVEABLE = 0x0002;
+export const CF_UNICODETEXT = 13;
 
 export const HWND_TOPMOST = -1;
 export const SWP_NOSIZE = 0x0001;
@@ -192,6 +205,7 @@ export const MF_STRING = 0x0000;
 export const MF_GRAYED = 0x0001;
 export const MF_CHECKED = 0x0008;
 export const MF_SEPARATOR = 0x0800;
+export const MF_POPUP = 0x0010;
 export const TPM_RIGHTBUTTON = 0x0002;
 export const TPM_NONOTIFY = 0x0080;
 export const TPM_RETURNCMD = 0x0100;
@@ -289,6 +303,63 @@ export function workAreaFor(r: Rect, flags = MONITOR_DEFAULTTONEAREST): Rect | n
   info[0] = 40;
   if (!user32.GetMonitorInfoW(mon, info)) return null;
   return { left: info[5], top: info[6], right: info[7], bottom: info[8] };
+}
+
+export interface MonitorRect extends Rect {
+  primary: boolean;
+}
+
+/** Every monitor's full rectangle (in physical pixels), the primary one first, then left to right. */
+export function monitors(): MonitorRect[] {
+  const list: MonitorRect[] = [];
+  const info = new Int32Array(10);
+  const cb = new JSCallback(
+    (mon: Pointer) => {
+      info[0] = 40;
+      if (user32.GetMonitorInfoW(mon, info)) {
+        list.push({ left: info[1], top: info[2], right: info[3], bottom: info[4], primary: (info[9] & 1) !== 0 });
+      }
+      return 1;
+    },
+    { args: [P, P, P, i64], returns: i32 },
+  );
+  try {
+    user32.EnumDisplayMonitors(null, null, cb.ptr, 0);
+  } finally {
+    cb.close();
+  }
+  return list.sort((a, b) => +b.primary - +a.primary || a.left - b.left || a.top - b.top);
+}
+
+/** Puts `text` on the clipboard; returns false if another app has it open. */
+export function copyText(owner: Handle, text: string): boolean {
+  const bytes = Buffer.from(text + "\0", "utf16le");
+  if (!user32.OpenClipboard(owner)) return false;
+  try {
+    user32.EmptyClipboard();
+    const mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, bytes.length);
+    if (!mem) return false;
+    const dst = kernel32.GlobalLock(mem);
+    if (!dst) {
+      kernel32.GlobalFree(mem);
+      return false;
+    }
+    new Uint8Array(toArrayBuffer(dst, 0, bytes.length)).set(bytes);
+    kernel32.GlobalUnlock(mem);
+    // On success the clipboard owns the memory.
+    if (!user32.SetClipboardData(CF_UNICODETEXT, mem)) {
+      kernel32.GlobalFree(mem);
+      return false;
+    }
+    return true;
+  } finally {
+    user32.CloseClipboard();
+  }
+}
+
+/** Opens a URL in the default browser. */
+export function openUrl(url: string) {
+  shell32.ShellExecuteW(null, wstr("open"), wstr(url), null, null, SW_SHOWNORMAL);
 }
 
 export function virtualScreen(): Rect {

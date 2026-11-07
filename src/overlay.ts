@@ -2,6 +2,7 @@
 // captures the mouse while one of the drawing tools is active.
 import type { Pointer } from "bun:ffi";
 import { createPen, LayeredPresenter, Surface, type Box } from "./gfx";
+import type { InkEvent } from "./ink";
 import { createWindow } from "./window";
 import {
   CompositingModeSourceCopy,
@@ -142,6 +143,8 @@ export class Overlay {
   eraserWidth = 32;
   /** Called whenever the list of finished strokes changes. */
   onStrokesChanged = () => {};
+  /** Called with every change to the ink, for the OBS mirror (src/ink.ts). */
+  onInk: (e: InkEvent) => void = () => {};
 
   private origin = { x: 0, y: 0 };
   private committed: Surface;
@@ -180,6 +183,12 @@ export class Overlay {
     return this.strokes.length;
   }
 
+  /** Sends the whole ink state through onInk, e.g. when a listener is attached. */
+  publishInk() {
+    this.onInk({ t: "visible", on: this.inkVisible });
+    this.onInk({ t: "strokes", strokes: this.strokes });
+  }
+
   get drawingsVisible() {
     return this.inkVisible;
   }
@@ -204,6 +213,7 @@ export class Overlay {
   setDrawingsVisible(on: boolean) {
     this.inkVisible = on;
     this.syncVisibility();
+    this.onInk({ t: "visible", on });
   }
 
   undo() {
@@ -278,6 +288,7 @@ export class Overlay {
     this.display.copyFrom(this.committed, { l: 0, t: 0, r: this.committed.width, b: this.committed.height });
     this.presenter.present(this.display, this.origin);
     this.syncVisibility();
+    this.onInk({ t: "strokes", strokes: this.strokes });
   }
 
   private beginStroke(x: number, y: number, button: number) {
@@ -290,6 +301,7 @@ export class Overlay {
     user32.SetCapture(this.hwnd);
     painter.all();
     this.presenter.present(this.display, this.origin, box);
+    this.onInk({ t: "begin", stroke });
   }
 
   private extendStroke(x: number, y: number) {
@@ -299,6 +311,7 @@ export class Overlay {
     const lastY = p[p.length - 1];
     if (x === lastX && y === lastY) return;
     p.push(x, y);
+    this.onInk({ t: "point", x, y });
     const segment = union(pointBox(lastX, lastY, a.stroke.width), pointBox(x, y, a.stroke.width));
     a.box = union(a.box, segment);
     if (a.stroke.tool === "highlighter") {
@@ -325,6 +338,7 @@ export class Overlay {
       b: Math.min(this.display.height, a.box.b),
     });
     this.strokes.push(a.stroke);
+    this.onInk({ t: "end" });
     if (key(user32.GetCapture()) === key(this.hwnd)) user32.ReleaseCapture();
     this.onStrokesChanged();
   }

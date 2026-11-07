@@ -38,6 +38,22 @@ Global shortcuts:
 Toolbar position, colour and size are saved to `display-pen.json` next to the exe. Starting the exe again
 while it is running just brings the toolbar back.
 
+## OBS
+
+To show your drawings in OBS (useful with Game Capture or Window Capture, which don't pick up the overlay),
+add a **Browser** source on top of your capture. The tray menu's **Show in OBS** submenu copies the link
+for each monitor (and shows its size), or opens a setup page in your browser with the same links and a live
+preview. By hand:
+
+- URL: `http://127.0.0.1:8766/ink`, or `http://127.0.0.1:8766/ink?monitor=2` for another monitor
+  (`1` = primary, then the others left to right, `all` = every monitor side by side)
+- Width / Height: your monitor's resolution, e.g. 1920 × 1080
+
+The page is transparent and draws the ink live, including the stroke in progress, undo, clear and
+show/hide drawings. It reconnects by itself if Display Pen is restarted.
+
+With **Display Capture** the ink is already in the picture and you don't need this.
+
 ## Stream Deck
 
 `streamdeck/` is a Stream Deck plugin with keys for **Draw On/Off**, **Tool** (pen, highlighter, eraser or
